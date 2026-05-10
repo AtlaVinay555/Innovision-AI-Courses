@@ -1,8 +1,4 @@
 <p align="center">
-  <img src="/public/OSCG26-Label.jpg" alt="OSCG26" width=""/>
-</p>
-
-<p align="center">
   <img src="./public/InnoVision_LOGO-removebg-preview.png" alt="InnoVision Logo" width="200"/>
 </p>
 
