@@ -39,6 +39,14 @@ export async function GET(request, { params }) {
             );
         }
 
+        const userId = await getUserId(request);
+        if (!userId) {
+            return NextResponse.json(
+                { error: "Authentication required" },
+                { status: 401 }
+            );
+        }
+
         const { courseId } = await params;
         const courseRef = db.collection("ingested_courses").doc(courseId);
         const courseSnap = await courseRef.get();
@@ -51,39 +59,20 @@ export async function GET(request, { params }) {
         }
 
         const courseData = courseSnap.data();
-
-        // Get user ID for progress tracking
-        let userId = null;
-        try {
-            const { cookies } = await import("next/headers");
-            const cookieStore = await cookies();
-            const sessionCookie = cookieStore.get("session");
-
-            if (sessionCookie) {
-                const { getAuth } = await import("firebase-admin/auth");
-                const decoded = await getAuth().verifySessionCookie(sessionCookie.value, true);
-                userId = decoded.email || decoded.uid;
-            } else {
-                const authHeader = request.headers.get("authorization");
-                if (authHeader?.startsWith("Bearer ")) {
-                    const { getAuth } = await import("firebase-admin/auth");
-                    const token = authHeader.replace("Bearer ", "");
-                    const decoded = await getAuth().verifyIdToken(token);
-                    userId = decoded.email || decoded.uid;
-                }
-            }
-        } catch (err) {
-            console.log("[DEBUG] Auth check failed in course detail API:", err.message);
+        
+        if (courseData.userId !== userId) {
+            return NextResponse.json(
+                { error: "Forbidden: you do not own this course" },
+                { status: 403 }
+            );
         }
 
-        // Fetch progress if userId is available
+        // Fetch progress
         let progressData = { progress: 0, completedChapters: [] };
-        if (userId) {
-            const progressRef = courseRef.collection("progress").doc(userId);
-            const progressSnap = await progressRef.get();
-            if (progressSnap.exists) {
-                progressData = progressSnap.data();
-            }
+        const progressRef = courseRef.collection("progress").doc(userId);
+        const progressSnap = await progressRef.get();
+        if (progressSnap.exists) {
+            progressData = progressSnap.data();
         }
 
         // Fetch chapters
