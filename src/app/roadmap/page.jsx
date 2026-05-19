@@ -23,8 +23,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import RecommendedCourses from "@/components/RecommendedCourses";
+import DailyQuests from "@/components/gamification/DailyQuests";
+import { useAuth } from "@/contexts/auth";
 
 export default function page() {
+    const { user } = useAuth();
     const [error, setError] = useState(null);
     const [roadmaps, setRoadmaps] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -236,6 +239,12 @@ export default function page() {
                 />
 
                 {!loading && !error && <RecommendedCourses query={searchQuery} />}
+
+                {!loading && !error && user?.email && (
+                    <div className="w-full max-w-4xl">
+                        <DailyQuests userId={user.email} />
+                    </div>
+                )}
 
                 {/* Search and Filter Section */}
                 {!loading && !error && completedCourses.length > 0 && (
