@@ -1,3 +1,4 @@
+import React from 'react';
 import MarkDown from "../MarkDown";
 import { Clock } from "lucide-react";
 
@@ -71,13 +72,12 @@ const Content = ({ currentTopic }) => {
                             );
                         case "para":
                             return (
-                                <p
+                                <div
                                     key={index}
                                     className="mb-4 leading-relaxed"
-                                    dangerouslySetInnerHTML={{
-                                        __html: item.content,
-                                    }}
-                                ></p>
+                                >
+                                    <MarkDown content={item.content} />
+                                </div>
                             );
                         case "code":
                             return (

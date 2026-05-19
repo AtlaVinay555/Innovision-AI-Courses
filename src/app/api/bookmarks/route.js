@@ -34,13 +34,29 @@ export async function POST(request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { roadmapId, courseId, chapterNumber, chapterTitle, roadmapTitle, courseTitle, courseType, action, chapterId } = await request.json();
+    const {
+      roadmapId,
+      courseId,
+      chapterNumber,
+      chapterTitle,
+      roadmapTitle,
+      courseTitle,
+      courseType,
+      action,
+      chapterId,
+      bookmarkId,
+      id: directBookmarkId,
+    } = await request.json();
 
     const id = courseId || roadmapId;
     const title = courseTitle || roadmapTitle || "Course";
     const type = courseType || "roadmap";
+    const explicitBookmarkId = bookmarkId || directBookmarkId;
+    const normalizedChapterNumber = chapterNumber !== undefined && chapterNumber !== null
+      ? Number(chapterNumber)
+      : undefined;
 
-    if (!id) {
+    if (!id && !(action === "remove" && explicitBookmarkId)) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
@@ -48,22 +64,52 @@ export async function POST(request) {
     const userDoc = await userRef.get();
 
     let bookmarks = userDoc.exists ? (userDoc.data().bookmarks || []) : [];
-    const bookmarkId = chapterNumber !== undefined ? `${type}_${id}_${chapterNumber}` : `${type}_${id}_course`;
+    const generatedBookmarkId = normalizedChapterNumber !== undefined
+      ? `${type}_${id}_${normalizedChapterNumber}`
+      : `${type}_${id}_course`;
 
     if (action === "remove") {
-      // Remove bookmark
-      bookmarks = bookmarks.filter(b => b.id !== bookmarkId);
+      // Prefer explicit stored bookmark id to avoid mismatches for custom id formats.
+      bookmarks = bookmarks.filter((b) => {
+        if (explicitBookmarkId) {
+          return b.id !== explicitBookmarkId;
+        }
+
+        if (b.id === generatedBookmarkId) {
+          return false;
+        }
+
+        const bookmarkCourseId = b.courseId || b.roadmapId;
+        const bookmarkType = b.courseType || "roadmap";
+        const bookmarkChapter = b.chapterNumber !== undefined && b.chapterNumber !== null
+          ? Number(b.chapterNumber)
+          : undefined;
+
+        if (!id || bookmarkCourseId !== id) {
+          return true;
+        }
+
+        if (courseType && bookmarkType !== type) {
+          return true;
+        }
+
+        if (normalizedChapterNumber !== undefined) {
+          return bookmarkChapter !== normalizedChapterNumber;
+        }
+
+        return bookmarkChapter !== undefined && bookmarkChapter !== 0;
+      });
     } else {
       // Add bookmark if not exists
-      const exists = bookmarks.some(b => b.id === bookmarkId);
+      const exists = bookmarks.some(b => b.id === generatedBookmarkId);
       if (!exists) {
         bookmarks.push({
-          id: bookmarkId,
+          id: generatedBookmarkId,
           roadmapId: id,
           courseId: id,
-          chapterNumber: chapterNumber || 0,
+          chapterNumber: normalizedChapterNumber || 0,
           chapterId: chapterId || null,
-          chapterTitle: chapterTitle || (chapterNumber ? `Chapter ${chapterNumber}` : "Course Overview"),
+          chapterTitle: chapterTitle || (normalizedChapterNumber ? `Chapter ${normalizedChapterNumber}` : "Course Overview"),
           roadmapTitle: title,
           courseTitle: title,
           courseType: type,
@@ -75,7 +121,7 @@ export async function POST(request) {
     await userRef.set({ bookmarks }, { merge: true });
 
     if (action !== "remove") {
-      const chapterLabel = chapterTitle || (chapterNumber ? `Chapter ${chapterNumber}` : null);
+      const chapterLabel = chapterTitle || (normalizedChapterNumber ? `Chapter ${normalizedChapterNumber}` : null);
       const notifBody = chapterLabel
         ? `You bookmarked "${chapterLabel}" in ${title}.`
         : `You bookmarked the course "${title}".`;
@@ -84,16 +130,16 @@ export async function POST(request) {
       if (type === "ingested") {
         if (chapterId) {
           notifLink = `/ingested-course/${id}/${chapterId}`;
-        } else if (chapterNumber && chapterNumber !== 0) {
-          notifLink = `/ingested-course/${id}/${chapterNumber}`;
+        } else if (normalizedChapterNumber && normalizedChapterNumber !== 0) {
+          notifLink = `/ingested-course/${id}/${normalizedChapterNumber}`;
         } else {
           notifLink = `/ingested-course/${id}`;
         }
       } else if (type === "youtube") {
         notifLink = `/youtube-course/${id}`;
       } else {
-        if (chapterNumber && chapterNumber !== 0) {
-          notifLink = `/chapter-test/${id}/${chapterNumber}`;
+        if (normalizedChapterNumber && normalizedChapterNumber !== 0) {
+          notifLink = `/chapter-test/${id}/${normalizedChapterNumber}`;
         } else {
           notifLink = `/roadmap/${id}`;
         }

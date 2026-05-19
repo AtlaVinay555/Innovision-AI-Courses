@@ -81,7 +81,7 @@ const Sidebar = ({ user, rank, difficultyLevel, leaderboard, onUserUpdate }) => 
         { icon: GlobeIcon, url: user?.socialLinks?.website, label: "Website" }
     ].filter(link => link.url && link.url.trim() !== "");
     return (
-        <div className="space-y-6 min-w-72 md:min-h-[calc(100vh-120px)] pt-3 md:sticky top-16">
+        <div className="w-full min-w-0 space-y-6 md:min-w-72 md:min-h-[calc(100vh-120px)] pt-3 md:sticky top-16">
             <Card className="gap-3">
                 <CardHeader className="pb-2">
                     <div className="flex items-center flex-wrap gap-4">

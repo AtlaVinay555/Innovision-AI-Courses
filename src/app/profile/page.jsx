@@ -8,7 +8,7 @@ import { Trophy, TrendingUp, BookOpen, Calendar, Settings, Award, ChevronLeft, C
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import Sidebar from "@/components/dashboard/Sidebar";
-import { ProblemSolvedChart } from "@/components/ui/problem-sloved-chart";
+import { ProblemSolvedChart } from "@/components/ui/problem-solved-chart";
 import { RecentCourses } from "@/components/ui/recent-submissions";
 import GamificationDashboard from "@/components/gamification/GamificationDashboard";
 import MotivationalQuote from "@/components/dashboard/MotivationalQuote";
@@ -107,10 +107,14 @@ export default function ProfilePage() {
   };
 
   async function fetchUser() {
-    const res = await fetch("/api/getuser");
-    const data = await res.json();
-    if (res.ok) {
-      setUserData(data);
+    try {
+      const res = await fetch("/api/getuser");
+      if (res.ok) {
+        const data = await res.json();
+        setUserData(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch user:", error);
     }
   }
 
@@ -136,23 +140,35 @@ export default function ProfilePage() {
 
   async function fetchRoadmaps() {
     setLoading(true);
-    const res = await fetch("/api/roadmap/all");
-    const data = await res.json();
-    const diffLevel = data.difficultyArray;
-    let docs = data.docs.length > 4 ? data.docs.slice(0, 4) : data.docs;
-    docs = docs.filter((e) => e.process === "completed");
-    const completed = data.docs.filter((roadmap) => roadmap.completed) || [];
-    setCompletedRoadmaps(completed);
-    setDifficultyLevel(diffLevel);
-    setRecentRoadmaps(docs);
-    setLoading(false);
+    try {
+      const res = await fetch("/api/roadmap/all");
+      if (!res.ok) throw new Error("Failed to fetch roadmaps");
+      const data = await res.json();
+      const diffLevel = data?.difficultyArray || [];
+      let docs = data?.docs || [];
+      docs = docs.length > 4 ? docs.slice(0, 4) : docs;
+      docs = docs.filter((e) => e.process === "completed");
+      const completed = (data?.docs || []).filter((roadmap) => roadmap.completed);
+      setCompletedRoadmaps(completed);
+      setDifficultyLevel(diffLevel);
+      setRecentRoadmaps(docs);
+    } catch (error) {
+      console.error("Failed to fetch roadmaps:", error);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function fetchRank() {
-    const res = await fetch("/api/getrank");
-    const data = await res.json();
-    setRank(data.rank);
-    setLeaderboard(data.leaderboard);
+    try {
+      const res = await fetch("/api/getrank");
+      if (!res.ok) throw new Error("Failed to fetch rank");
+      const data = await res.json();
+      setRank(data?.rank || 0);
+      setLeaderboard(data?.leaderboard || []);
+    } catch (error) {
+      console.error("Failed to fetch rank:", error);
+    }
   }
 
   if (!user) {
@@ -179,7 +195,7 @@ export default function ProfilePage() {
           feature={blockedFeature}
         />
 
-        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] gap-6">
           {/* Left Sidebar - All original features */}
           <Sidebar
             user={userData}
@@ -190,7 +206,7 @@ export default function ProfilePage() {
           />
 
           {/* Main Content - All original tabs */}
-          <div className="space-y-6">
+          <div className="min-w-0 space-y-6">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
               {/* Tab Navigation Pager (Mobile Optimized) */}
               <div className="relative group">

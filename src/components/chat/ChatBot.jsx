@@ -42,10 +42,30 @@ export default function ChatBot({ courseId, chapterId, courseTitle }) {
         const trimmed = input.trim();
         if (!trimmed || loading) return;
 
-        const userMessage = { role: "user", text: trimmed };
-        setMessages((prev) => [...prev, userMessage]);
+        const userMessage = {
+            id: crypto.randomUUID?.() || `${Date.now()}-user`,
+            role: "user",
+            text: trimmed,
+        };
+        const assistantMessageId = crypto.randomUUID?.() || `${Date.now()}-assistant`;
+
+        setMessages((prev) => [
+            ...prev,
+            userMessage,
+            { id: assistantMessageId, role: "assistant", text: "", isPending: true },
+        ]);
         setInput("");
         setLoading(true);
+
+        const updateAssistantMessage = (text) => {
+            setMessages((prev) =>
+                prev.map((msg) =>
+                    msg.id === assistantMessageId
+                        ? { ...msg, text, isPending: false }
+                        : msg
+                )
+            );
+        };
 
         try {
             const res = await fetch("/api/ai/chat", {
@@ -55,36 +75,38 @@ export default function ChatBot({ courseId, chapterId, courseTitle }) {
                     message: trimmed,
                     courseId,
                     chapterId: chapterId || null,
-                    history: messages.slice(-6),
+                    history: messages.slice(-20).map(({ role, text }) => ({ role, text })),
                 }),
             });
 
-            const data = await res.json();
+            if (res.ok && res.body) {
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let streamedText = "";
 
-            if (res.ok && data.reply) {
-                setMessages((prev) => [
-                    ...prev,
-                    { role: "assistant", text: data.reply },
-                ]);
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        break;
+                    }
+
+                    streamedText += decoder.decode(value, { stream: true });
+                    updateAssistantMessage(streamedText);
+                }
+
+                streamedText += decoder.decode();
+                updateAssistantMessage(streamedText);
             } else {
-                setMessages((prev) => [
-                    ...prev,
-                    {
-                        role: "assistant",
-                        text:
-                            data.error ||
-                            "Sorry, I couldn't generate a response. Please try again.",
-                    },
-                ]);
+                const data = await res.json().catch(() => ({}));
+                updateAssistantMessage(
+                    data.error ||
+                        "Sorry, I couldn't generate a response. Please try again."
+                );
             }
         } catch {
-            setMessages((prev) => [
-                ...prev,
-                {
-                    role: "assistant",
-                    text: "Network error. Please check your connection and try again.",
-                },
-            ]);
+            updateAssistantMessage(
+                "Network error. Please check your connection and try again."
+            );
         } finally {
             setLoading(false);
         }
@@ -199,7 +221,7 @@ export default function ChatBot({ courseId, chapterId, courseTitle }) {
 
                         {messages.map((msg, i) => (
                             <div
-                                key={i}
+                                key={msg.id || i}
                                 className={cn(
                                     "flex gap-2.5",
                                     msg.role === "user"
@@ -220,7 +242,13 @@ export default function ChatBot({ courseId, chapterId, courseTitle }) {
                                             : "bg-muted/60 border border-border/40 rounded-bl-md"
                                     )}
                                 >
-                                    {msg.role === "assistant" ? (
+                                    {msg.role === "assistant" && msg.isPending ? (
+                                        <div className="flex items-center gap-1.5 py-1 min-w-[3.25rem]">
+                                            <span className="w-2 h-2 rounded-full bg-purple-500 animate-bounce [animation-delay:0ms]" />
+                                            <span className="w-2 h-2 rounded-full bg-purple-500 animate-bounce [animation-delay:150ms]" />
+                                            <span className="w-2 h-2 rounded-full bg-purple-500 animate-bounce [animation-delay:300ms]" />
+                                        </div>
+                                    ) : msg.role === "assistant" ? (
                                         <div className="prose prose-sm dark:prose-invert max-w-none [&>p]:mb-2 [&>p:last-child]:mb-0 [&>ul]:mb-2 [&>ol]:mb-2">
                                             <ReactMarkdown>
                                                 {msg.text}
@@ -240,21 +268,6 @@ export default function ChatBot({ courseId, chapterId, courseTitle }) {
                             </div>
                         ))}
 
-
-                        {loading && (
-                            <div className="flex gap-2.5 justify-start">
-                                <div className="w-7 h-7 rounded-full bg-linear-to-br from-purple-500 to-blue-500 flex items-center justify-center shrink-0">
-                                    <Bot className="h-3.5 w-3.5 text-white" />
-                                </div>
-                                <div className="bg-muted/60 border border-border/40 rounded-2xl rounded-bl-md px-4 py-3">
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="w-2 h-2 bg-purple-500 rounded-full animate-bounce [animation-delay:0ms]" />
-                                        <span className="w-2 h-2 bg-purple-500 rounded-full animate-bounce [animation-delay:150ms]" />
-                                        <span className="w-2 h-2 bg-purple-500 rounded-full animate-bounce [animation-delay:300ms]" />
-                                    </div>
-                                </div>
-                            </div>
-                        )}
 
                         <div ref={messagesEndRef} />
                     </div>

@@ -114,7 +114,7 @@ export default function StatsCard({ userId }) {
 
   if (loading) {
     return (
-      <Card>
+      <Card className="min-w-0">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-blue-500" />
@@ -133,7 +133,7 @@ export default function StatsCard({ userId }) {
   }
 
   return (
-    <Card>
+    <Card className="min-w-0 overflow-hidden">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <TrendingUp className="h-5 w-5 text-blue-500" />
@@ -142,7 +142,7 @@ export default function StatsCard({ userId }) {
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <StatItem
             icon={Clock}
             label="Hours Studied"
@@ -172,7 +172,7 @@ export default function StatsCard({ userId }) {
         </div>
 
         {/* Secondary Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 min-w-0">
           <div className="text-center p-3 bg-muted rounded-lg">
             <p className="text-2xl font-bold">{stats.level}</p>
             <p className="text-xs text-muted-foreground">Level</p>
@@ -188,13 +188,13 @@ export default function StatsCard({ userId }) {
         </div>
 
         {/* Activity Heatmap */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
+        <div className="space-y-2 min-w-0">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between min-w-0">
             <h4 className="text-sm font-medium flex items-center gap-2">
               <Calendar className="h-4 w-4" />
               Activity Heatmap
             </h4>
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
               <span>Less</span>
               <div className="flex gap-0.5">
                 <div className="w-3 h-3 rounded-sm bg-muted" />
@@ -207,7 +207,7 @@ export default function StatsCard({ userId }) {
             </div>
           </div>
 
-          <div className="heatmap-container overflow-x-auto">
+          <div className="heatmap-container w-full max-w-full overflow-x-auto overflow-y-hidden pb-1">
             <CalendarHeatmap
               startDate={startDate}
               endDate={new Date()}
@@ -226,10 +226,16 @@ export default function StatsCard({ userId }) {
       <style jsx global>{`
         .heatmap-container .react-calendar-heatmap {
           font-size: 10px;
+          width: 100%;
+          min-width: 720px;
         }
         .heatmap-container .react-calendar-heatmap text {
           fill: var(--muted-foreground);
           font-size: 8px;
+        }
+        .heatmap-container .react-calendar-heatmap svg {
+          width: 100%;
+          height: auto;
         }
         .heatmap-container .react-calendar-heatmap rect {
           rx: 2;
@@ -275,11 +281,11 @@ function StatItem({ icon: Icon, label, value, suffix = "", color }) {
   };
 
   return (
-    <div className="flex flex-row sm:flex-row items-center gap-3 p-3 rounded-lg bg-muted/50">
+    <div className="min-w-0 flex flex-row items-center gap-3 p-3 rounded-lg bg-muted/50">
       <div className={`p-2 rounded-lg shrink-0 ${colorClasses[color]}`}>
         <Icon className="h-5 w-5" />
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <p className="text-lg sm:text-xl font-bold truncate">
           {value}
           {suffix && <span className="text-xs sm:text-sm font-normal text-muted-foreground ml-1">{suffix}</span>}

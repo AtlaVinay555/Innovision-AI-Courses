@@ -7,19 +7,18 @@ import { useEffect, useState } from "react";
 const LeaderAvatar = ({ position, image, name, xp }) => {
   let size = position === 0 ? "w-16 h-16" : position === 1 ? "w-14 h-14" : position === 2 ? "w-12 h-12" : "";
   return (
-    <div className="text-center flex flex-col items-center">
+    <div className="min-w-0 text-center flex flex-col items-center">
       <div className={cn("rounded-full", size)}>
         <Avatar className={cn(size)}>
           <AvatarImage src={image} />
           <AvatarFallback>{name[0].toUpperCase()}</AvatarFallback>
         </Avatar>
       </div>
-      <div className={cn("flex gap-1 text-sm", position === 0 ? "text-lg" : position === 1 ? "text-base" : "text-sm")}>
-        {" "}
-        <span>#{position + 1}</span>
-        <p>{name.split(" ")[0]}</p>
+      <div className={cn("flex items-center justify-center gap-1 text-sm min-w-0", position === 0 ? "text-lg" : position === 1 ? "text-base" : "text-sm")}>
+        <span className="shrink-0">#{position + 1}</span>
+        <p className="truncate">{name.split(" ")[0]}</p>
       </div>
-      <p>{xp} xp</p>
+      <p className="text-xs sm:text-sm whitespace-nowrap">{xp} xp</p>
     </div>
   );
 };
@@ -36,10 +35,10 @@ const LeaderBoard = ({ leaderboard }) => {
   }, [user, leaderboard]);
 
   return (
-    <div className="p-2 border border-border shadow-sm rounded-xl">
+    <div className="w-full min-w-0 p-2 border border-border shadow-sm rounded-xl overflow-hidden">
       <h1 className="text-center">Leaderboard</h1>{" "}
       {leader[0]?.email ? (
-        <div id="head" className="flex gap-2 py-4 px-2 justify-around items-end mx-auto max-w-96">
+        <div id="head" className="grid grid-cols-3 gap-2 py-4 px-2 items-end mx-auto w-full max-w-full">
           <LeaderAvatar
             position={1}
             image={leader[1]?.image}
@@ -60,7 +59,7 @@ const LeaderBoard = ({ leaderboard }) => {
           ></LeaderAvatar>
         </div>
       ) : (
-        <div className="flex justify-around py-4 items-end mx-auto max-w-96">
+        <div className="grid grid-cols-3 gap-2 py-4 items-end mx-auto w-full max-w-full">
           <Skeleton className={"w-14 h-14 rounded-full"}></Skeleton>
           <Skeleton className={"w-16 h-16 rounded-full"}></Skeleton>
           <Skeleton className={"w-12 h-12 rounded-full"}></Skeleton>
