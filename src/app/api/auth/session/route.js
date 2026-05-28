@@ -34,13 +34,15 @@ export async function POST(req) {
           const userEmail = decoded.email;
           if (userEmail) {
             const adminDb = getAdminDb();
-            createNotification(adminDb, {
-              userId: userEmail,
-              title: "Welcome back!",
-              body: "You recently signed in. Ready to keep learning?",
-              type: "system",
-              link: "/profile",
-            }).catch(() => { });
+            if (adminDb) {
+              createNotification(adminDb, {
+                userId: userEmail,
+                title: "Welcome back!",
+                body: "You recently signed in. Ready to keep learning?",
+                type: "system",
+                link: "/profile",
+              }).catch(() => { });
+            }
           }
         }
       } catch (err) {

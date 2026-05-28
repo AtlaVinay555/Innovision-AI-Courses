@@ -24,7 +24,11 @@ export default function Match({ task, roadmapId, chapterNumber, onCourseComplete
   const rightRefs = useRef([]);
   const containerRef = useRef(null);
 
+  // Defensive validation: ensure schema exists before hooks depend on it
+  const isValidTask = task && task.terms && Array.isArray(task.terms.lhs) && Array.isArray(task.terms.rhs);
+
   useEffect(() => {
+    if (!isValidTask) return;
     const lhsLength = (task?.terms?.lhs || []).length;
     const rhsLength = (task?.terms?.rhs || []).length;
     leftRefs.current = leftRefs.current.slice(0, lhsLength);
@@ -211,6 +215,24 @@ export default function Match({ task, roadmapId, chapterNumber, onCourseComplete
     if (matches.includes(index)) return "bg-blue-200/80 border-blue-400/80 dark:bg-blue-900/50 dark:border-blue-700";
     return "bg-background";
   };
+
+  if (!isValidTask) {
+    return (
+      <Card className="w-full max-w-3xl border-0 shadow-none mx-auto">
+        <CardHeader>
+          <CardTitle>Match the Following</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Alert className="bg-red-500/10 text-red-500 border-red-500/20">
+            <XCircle className="h-4 w-4" />
+            <AlertDescription className="ml-2">
+              This task could not be generated correctly by the AI. You may skip it.
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="w-full max-w-3xl border-0 shadow-none mx-auto">

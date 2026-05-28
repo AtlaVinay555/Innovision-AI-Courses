@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebase-admin";
+import { getAdminDb } from "@/lib/firebase-admin";
 
 export async function GET(request) {
   try {
+    const adminDb = getAdminDb();
+    if (!adminDb) {
+      if (process.env.NODE_ENV === "development") {
+        return NextResponse.json({ daily: [], weekly: [], allTime: [], _mock: true });
+      }
+      return NextResponse.json({ error: "Firebase not configured" }, { status: 503 });
+    }
     const gamificationRef = adminDb.collection("gamification");
 
     // Helper function to enrich user data

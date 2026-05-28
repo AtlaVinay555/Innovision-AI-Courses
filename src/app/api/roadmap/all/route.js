@@ -1,15 +1,22 @@
-import { adminDb } from "@/lib/firebase-admin";
+import { getAdminDb } from "@/lib/firebase-admin";
 import { getServerSession } from "@/lib/auth-server";
 import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
     const session = await getServerSession();
-    if (!session) {
+    if (!session && process.env.NODE_ENV !== "development") {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    const roadmapsRef = adminDb.collection("users").doc(session.user.email).collection("roadmaps");
+    const adminDbInstance = getAdminDb();
+
+    // Fallback if adminDb is not configured
+    if (!adminDbInstance) {
+      return NextResponse.json({ docs: [], difficultyArray: [0, 0, 0] });
+    }
+
+    const roadmapsRef = adminDbInstance.collection("users").doc(session.user.email).collection("roadmaps");
 
     const querySnapshot = await roadmapsRef.get();
 

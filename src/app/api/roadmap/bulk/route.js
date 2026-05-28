@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebase-admin";
+import { getAdminDb } from "@/lib/firebase-admin";
 import { getServerSession } from "@/lib/auth-server";
 
 export async function POST(request) {
@@ -23,6 +23,20 @@ export async function POST(request) {
         { error: "Invalid action. Use 'delete', 'archive', or 'unarchive'" },
         { status: 400 }
       );
+    }
+
+    const adminDb = getAdminDb();
+    if (!adminDb) {
+      if (process.env.NODE_ENV === "development") {
+        return NextResponse.json({
+          success: true,
+          message: `Bulk ${action} completed (mock)`,
+          results: { success: courseIds, failed: [] },
+          processed: courseIds.length,
+          failed: 0,
+        });
+      }
+      return NextResponse.json({ error: "Database not available" }, { status: 503 });
     }
 
     const userEmail = session.user.email;

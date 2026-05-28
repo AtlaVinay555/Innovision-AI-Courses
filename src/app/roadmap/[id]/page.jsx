@@ -36,9 +36,14 @@ const serializeTimestamps = (data) => {
 
 //function to fetch roadmap
 async function getRoadmap(id) {
+
   const session = await getServerSession();
   if (session) {
-    const docSnap = await adminDb.collection("users").doc(session.user.email).collection("roadmaps").doc(id).get();
+    const { getAdminDb } = await import("@/lib/firebase-admin");
+    const adminDbInstance = getAdminDb();
+    if (!adminDbInstance) return false;
+
+    const docSnap = await adminDbInstance.collection("users").doc(session.user.email).collection("roadmaps").doc(id).get();
 
     if (!docSnap.exists) {
       return false;
@@ -46,6 +51,7 @@ async function getRoadmap(id) {
 
     return serializeTimestamps(docSnap.data());
   }
+  return false;
 }
 
 //roadmap component

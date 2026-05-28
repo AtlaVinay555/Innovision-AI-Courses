@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebase-admin";
+import { getAdminDb } from "@/lib/firebase-admin";
 
 // POST - Award a badge to user
 export async function POST(request) {
@@ -10,7 +10,15 @@ export async function POST(request) {
       return NextResponse.json({ error: "userId and badgeId required" }, { status: 400 });
     }
 
-    const userRef = adminDb.collection("gamification").doc(userId);
+    const adminDbInstance = getAdminDb();
+    if (!adminDbInstance) {
+      if (process.env.NODE_ENV === "development") {
+        return NextResponse.json({ success: true, badges: [badgeId], _mock: true });
+      }
+      return NextResponse.json({ error: "Firebase not configured" }, { status: 503 });
+    }
+
+    const userRef = adminDbInstance.collection("gamification").doc(userId);
     const userDoc = await userRef.get();
 
     if (!userDoc.exists) {

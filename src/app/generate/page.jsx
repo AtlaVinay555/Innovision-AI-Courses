@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Calendar, Clock, Flag, GraduationCap, Loader2, BookOpen, Sparkles, Check, ChevronsUpDown, Crown } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -38,6 +38,7 @@ import { useAuth } from "@/contexts/auth";
 import { useNotifications } from "@/contexts/notifications";
 import { useRouter } from "next/navigation";
 import { loader } from "@/components/ui/Custom/ToastLoader";
+import { useGeminiRequest } from "@/hooks/useGeminiRequest";
 
 //Select Card component
 const SelectionCard = ({ options, selectedValue, onSelect, title }) => {
@@ -92,6 +93,23 @@ export default function Page() {
   const { fetchNotifications } = useNotifications();
   const router = useRouter();
   const { showLoader } = loader();
+  const { request: geminiRequest } = useGeminiRequest();
+  const lastActionRef = useRef({ id: null, timestamp: 0 });
+
+  const generateRequestId = (source) => {
+    return `req-${source}-${Math.random().toString(36).substring(2, 9)}-${Date.now()}`;
+  };
+
+  const isDuplicateAction = (source) => {
+    const now = Date.now();
+    if (lastActionRef.current.timestamp && (now - lastActionRef.current.timestamp < 5000)) {
+      console.warn(`[REQUEST REJECTED AS DUPLICATE] Source: ${source}. Too soon after last action.`);
+      return true;
+    }
+    lastActionRef.current = { id: generateRequestId(source), timestamp: now };
+    console.log(`[REQUEST ACCEPTED] Action generated ID: ${lastActionRef.current.id}`);
+    return false;
+  };
 
   // Fetch premium status on mount
   useEffect(() => {
@@ -152,7 +170,14 @@ export default function Page() {
   }, [curriculumData, availableCurriculumSubjects]);
 
   const handleCurriculumSubmit = async () => {
+    console.log(`[BUTTON CLICK] User initiated Curriculum roadmap generation`);
     if (isSubmitting) return;
+    if (isDuplicateAction('curriculum')) {
+      toast.error("Please wait a moment before trying again.");
+      return;
+    }
+    const currentReqId = lastActionRef.current.id;
+
     // Check premium status for curriculum generation
     if (!premiumStatus.isPremium) {
       toast.error("Curriculum generation is only available for Premium users. Upgrade to access!");
@@ -189,12 +214,28 @@ export default function Page() {
         Include detailed explanations, examples, and age-appropriate learning activities.`;
 
     try {
-      let res = await fetch("/api/user_prompt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, difficulty: "balanced" }),
-      });
-      const roadmapData = await res.json();
+      const fetchCurriculum = async () => {
+        console.log(`[FRONTEND FETCH START] [${currentReqId}] Sending POST /api/user_prompt for Curriculum: ${curriculumData.subject}`);
+        const response = await fetch("/api/user_prompt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Request-ID": currentReqId },
+          body: JSON.stringify({ prompt, difficulty: "balanced", requestId: currentReqId, source: "curriculum" }),
+        });
+        if (!response.ok) {
+          let errorMsg = "Failed to start generation";
+          try {
+            const errData = await response.json();
+            if (errData.reason) errorMsg = errData.reason;
+            else if (errData.message) errorMsg = errData.message;
+          } catch(e) {}
+          throw new Error(errorMsg);
+        }
+        return await response.json();
+      };
+
+      console.log(`[WRAPPER ENTER] Passing curriculum request to geminiRequest hook...`);
+      const roadmapData = await geminiRequest(`roadmap:${curriculumData.subject}_${curriculumData.classLevel}`, fetchCurriculum);
+      console.log(`[REQUEST COMPLETE] Wrapper returned curriculum result:`, roadmapData);
       const id = roadmapData.id;
 
       if (!id) {
@@ -218,9 +259,9 @@ export default function Page() {
           }
           clearInterval(interval);
         }
-      }, 3000);
+      }, 5000);
     } catch (error) {
-      toast.error("Error generating course");
+      toast.error(error.message || "Error generating course");
       setIsSubmitting(false);
     }
   };
@@ -252,7 +293,14 @@ export default function Page() {
   };
 
   const handleEngineeringSubmit = async () => {
+    console.log(`[BUTTON CLICK] User initiated Engineering roadmap generation`);
     if (isSubmitting) return;
+    if (isDuplicateAction('engineering')) {
+      toast.error("Please wait a moment before trying again.");
+      return;
+    }
+    const currentReqId = lastActionRef.current.id;
+
     // Check premium status for engineering generation
     if (!premiumStatus.isPremium) {
       toast.error("Engineering course generation is only available for Premium users. Upgrade to access!");
@@ -278,12 +326,28 @@ export default function Page() {
         Include detailed explanations, examples, and practical applications for each module.`;
 
     try {
-      let res = await fetch("/api/user_prompt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, difficulty: "balanced" }),
-      });
-      const roadmapData = await res.json();
+      const fetchEngineering = async () => {
+        console.log(`[FRONTEND FETCH START] [${currentReqId}] Sending POST /api/user_prompt for Engineering: ${engineeringData.subject}`);
+        const response = await fetch("/api/user_prompt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Request-ID": currentReqId },
+          body: JSON.stringify({ prompt, difficulty: "balanced", requestId: currentReqId, source: "engineering" }),
+        });
+        if (!response.ok) {
+          let errorMsg = "Failed to start generation";
+          try {
+            const errData = await response.json();
+            if (errData.reason) errorMsg = errData.reason;
+            else if (errData.message) errorMsg = errData.message;
+          } catch(e) {}
+          throw new Error(errorMsg);
+        }
+        return await response.json();
+      };
+
+      console.log(`[WRAPPER ENTER] Passing engineering request to geminiRequest hook...`);
+      const roadmapData = await geminiRequest(`roadmap:${engineeringData.subject}_${engineeringData.branch}`, fetchEngineering);
+      console.log(`[REQUEST COMPLETE] Wrapper returned engineering result:`, roadmapData);
       const id = roadmapData.id;
 
       if (!id) {
@@ -307,9 +371,9 @@ export default function Page() {
           }
           clearInterval(interval);
         }
-      }, 3000);
+      }, 5000);
     } catch (error) {
-      toast.error("Error generating course");
+      toast.error(error.message || "Error generating course");
       setIsSubmitting(false);
     }
   };
@@ -374,7 +438,13 @@ export default function Page() {
   });
 
   const onSubmit = async (data) => {
+    console.log(`[BUTTON CLICK] User initiated roadmap generation for: ${data.concept}`);
     if (isSubmitting) return;
+    if (isDuplicateAction('custom')) {
+      toast.error("Please wait a moment before trying again.");
+      return;
+    }
+    const currentReqId = lastActionRef.current.id;
     setIsSubmitting(true);
 
     if (!user) {
@@ -404,18 +474,30 @@ Generate maximum chapters if 3-months or longer.
 Include: chapter titles, descriptions, learning objectives, key topics.
 Return valid JSON only.`;
 
-      const res = await fetch("/api/user_prompt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt,
-          difficulty: data.difficultyLevel,
-        }),
-      });
+      const fetchCustom = async () => {
+        console.log(`[FRONTEND FETCH START] [${currentReqId}] Sending POST /api/user_prompt for: ${data.concept}`);
+        const response = await fetch("/api/user_prompt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Request-ID": currentReqId },
+          body: JSON.stringify({ prompt, difficulty: data.difficultyLevel, requestId: currentReqId, source: "custom" }),
+        });
+        if (!response.ok) {
+          let errorMsg = "Failed to start generation";
+          try {
+            const errData = await response.json();
+            if (errData.reason) errorMsg = errData.reason;
+            else if (errData.message) errorMsg = errData.message;
+          } catch(e) {}
+          throw new Error(errorMsg);
+        }
+        return await response.json();
+      };
 
-      const result = await res.json();
+      console.log(`[WRAPPER ENTER] Passing request to geminiRequest hook...`);
+      const result = await geminiRequest(`roadmap:${data.concept}`, fetchCustom);
+      console.log(`[REQUEST COMPLETE] Wrapper returned result:`, result);
 
-      if (!res.ok || !result.id) {
+      if (!result.id) {
         toast.error(result.message || "Failed to start generation");
         setIsSubmitting(false);
         return;
@@ -443,12 +525,12 @@ Return valid JSON only.`;
         } catch (err) {
           console.error("Polling error:", err);
         }
-      }, 3000);
+      }, 5000);
 
       // Auto cleanup after 2 minutes
       setTimeout(() => clearInterval(interval), 120000);
     } catch (error) {
-      toast.error("Network error. Try again.");
+      toast.error(error.message || "Network error. Try again.");
       setIsSubmitting(false);
     }
   };

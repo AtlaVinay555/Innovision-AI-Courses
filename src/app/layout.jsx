@@ -7,9 +7,13 @@ import { AuthProvider } from "@/contexts/auth";
 import { XpProvider } from "@/contexts/xp";
 import { NightModeProvider } from "@/contexts/nightMode";
 import { NotificationProvider } from "@/contexts/notifications";
+import { Analytics } from "@vercel/analytics/next";
 import OfflineIndicator from "@/components/OfflineIndicator";
 import NotificationChecker from "@/components/NotificationChecker";
-import { Analytics } from "@vercel/analytics/next";
+import ClientDebugBoundary from "@/components/debug/ClientDebugBoundary";
+import { initServerDebug } from "@/lib/debug/serverDebugInit";
+
+initServerDebug();
 
 const robotoSans = Roboto({
   variable: "--font-roboto-sans",
@@ -79,6 +83,7 @@ export default function RootLayout({ children }) {
           </XpProvider>
         </AuthProvider>
         <Analytics />
+        <ClientDebugBoundary />
       </body>
     </html>
   );

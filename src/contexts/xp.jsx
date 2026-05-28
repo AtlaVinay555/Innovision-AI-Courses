@@ -65,12 +65,31 @@ export const XpProvider = ({ children }) => {
   const awardBadge = useCallback(async (badgeId) => {
     if (!user?.email) return;
 
+    if (process.env.NODE_ENV === "development") {
+      console.log(`[Mock Gamification] Awarded badge: ${badgeId}`);
+      showAchievementToast({
+        title: "Badge Earned!",
+        description: `You unlocked a new badge: ${badgeId.replace(/_/g, " ")} (Mock)`,
+        xp: 25,
+        icon: "trophy",
+        type: "badge",
+      });
+      fireConfetti("xp_milestone");
+      return { success: true, badgeId };
+    }
+
     try {
       const res = await fetch("/api/gamification/award-badge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user.email, badgeId }),
       });
+      
+      if (!res.ok) {
+         console.warn(`[Gamification API] Error ${res.status} awarding badge`);
+         return { success: false };
+      }
+      
       const data = await res.json();
 
       if (data.success) {
@@ -86,7 +105,8 @@ export const XpProvider = ({ children }) => {
       }
       return data;
     } catch (error) {
-      console.error("Error awarding badge:", error);
+      console.warn("[Gamification] Safely caught error awarding badge:", error);
+      return { success: false };
     }
   }, [user, fireConfetti]);
 
@@ -240,8 +260,17 @@ export const XpProvider = ({ children }) => {
   const getXp = useCallback(async () => {
     if (!user?.email) return;
 
+    if (process.env.NODE_ENV === "development") {
+      // Mock XP fetch
+      return;
+    }
+
     try {
       const res = await fetch(`/api/gamification/stats?userId=${user.email}`);
+      if (!res.ok) {
+        console.warn(`[Gamification API] Error ${res.status} fetching stats`);
+        return;
+      }
       const data = await res.json();
 
       if (data && typeof data.xp === "number") {
@@ -261,7 +290,7 @@ export const XpProvider = ({ children }) => {
         setLevel(newLevel);
       }
     } catch (error) {
-      console.error("Error fetching XP:", error);
+      console.warn("[Gamification] Safely caught error fetching XP:", error);
     }
   }, [user, xp, checkMilestones]);
 
@@ -269,18 +298,36 @@ export const XpProvider = ({ children }) => {
     async (action, value = null, useComboMultiplier = false) => {
       if (!user?.email) return;
 
-      try {
-        // Apply combo multiplier if enabled
-        let finalValue = value;
-        let multiplier = 1;
+      let finalValue = value || 10; // Default mock value
+      let multiplier = 1;
 
-        if (useComboMultiplier && combo >= 2) {
-          multiplier = getMultiplier(combo);
-          if (typeof value === "number") {
-            finalValue = value * multiplier;
-          }
+      if (useComboMultiplier && combo >= 2) {
+        multiplier = getMultiplier(combo);
+        if (typeof value === "number") {
+          finalValue = value * multiplier;
         }
+      }
 
+      if (process.env.NODE_ENV === "development") {
+        console.log(`[Mock Gamification] Awarded XP for ${action}: ${finalValue}`);
+        
+        // Mock the state update directly without API
+        const newTotalXp = xp + finalValue;
+        const newLevel = Math.floor(newTotalXp / 500) + 1;
+        
+        setChanged(finalValue);
+        change();
+        checkMilestones(prevXpRef.current, newTotalXp, prevLevelRef.current, newLevel);
+        
+        prevXpRef.current = newTotalXp;
+        prevLevelRef.current = newLevel;
+        setXp(newTotalXp);
+        setLevel(newLevel);
+        
+        return { success: true, multiplier, originalValue: value, finalValue };
+      }
+
+      try {
         const res = await fetch("/api/gamification/stats", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -291,6 +338,11 @@ export const XpProvider = ({ children }) => {
           }),
         });
 
+        if (!res.ok) {
+           console.warn(`[Gamification API] Error ${res.status} awarding XP`);
+           return { success: false };
+        }
+
         const result = await res.json();
 
         if (result.success) {
@@ -299,10 +351,11 @@ export const XpProvider = ({ children }) => {
           return { ...result, multiplier, originalValue: value, finalValue };
         }
       } catch (error) {
-        console.error("Error awarding XP:", error);
+        console.warn("[Gamification] Safely caught error awarding XP:", error);
+        return { success: false };
       }
     },
-    [user, getXp, combo]
+    [user, getXp, combo, xp, checkMilestones]
   );
 
   useEffect(() => {

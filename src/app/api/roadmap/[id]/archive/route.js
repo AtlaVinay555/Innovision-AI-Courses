@@ -1,4 +1,4 @@
-import { adminDb } from "@/lib/firebase-admin";
+import { getAdminDb } from "@/lib/firebase-admin";
 import { getServerSession } from "@/lib/auth-server";
 import { NextResponse } from "next/server";
 
@@ -17,6 +17,17 @@ export async function PATCH(req, { params }) {
         { message: "Invalid archived value. Must be boolean." },
         { status: 400 }
       );
+    }
+
+    const adminDb = getAdminDb();
+    if (!adminDb) {
+      if (process.env.NODE_ENV === "development") {
+        return NextResponse.json({
+          message: archived ? "Course archived successfully (mock)" : "Course unarchived successfully (mock)",
+          archived: archived,
+        });
+      }
+      return NextResponse.json({ message: "Database not configured" }, { status: 503 });
     }
 
     const docRef = adminDb
