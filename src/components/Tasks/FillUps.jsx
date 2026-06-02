@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { useContext } from "react";
 import xpContext from "@/contexts/xp";
 import { ComboIndicator } from "@/components/gamification/ComboMultiplier";
+import { isAnswerCorrect } from "@/lib/answerValidator";
 
 const FillUps = ({ task, roadmapId, chapterNumber, onCourseComplete }) => {
   const [userAnswer, setUserAnswer] = useState("");
@@ -27,13 +28,11 @@ const FillUps = ({ task, roadmapId, chapterNumber, onCourseComplete }) => {
     setSubmitting(true);
 
     try {
-      const normalizedUserAnswer = task.caseSensitive ? userAnswer.trim() : userAnswer.trim().toLowerCase();
-
-      const normalizedAcceptableAnswers = (task.acceptableAnswers || []).map((answer) =>
-        task.caseSensitive ? answer.trim() : answer.trim().toLowerCase()
+      correct = isAnswerCorrect(
+        userAnswer,
+        task.acceptableAnswers || [task.answer],
+        task.caseSensitive || false
       );
-
-      correct = normalizedAcceptableAnswers.includes(normalizedUserAnswer);
 
       const res = await fetch(`/api/tasks`, {
         method: "POST",
