@@ -110,7 +110,7 @@ const Navbar = () => {
 
   const fetchStreak = async (email) => {
     try {
-      const res = await fetch(`/api/gamification/stats?userId=${email}`);
+      const res = await fetch("/api/gamification/stats");
       const data = await res.json();
       setStreak(data.streak || 0);
     } catch (error) {

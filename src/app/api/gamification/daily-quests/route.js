@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin";
+import { getServerSession } from "@/lib/auth-server";
 
 // Daily quest templates - rotates based on day
 const QUEST_TEMPLATES = [
@@ -51,12 +52,13 @@ function getDailyQuests(dateStr) {
 // GET - Fetch user's daily quests
 export async function GET(request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
+    const session = await getServerSession();
 
-    if (!userId) {
-      return NextResponse.json({ error: "userId required" }, { status: 400 });
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    const userId = session.user.email;
 
     const today = new Date().toISOString().split("T")[0];
     const questTemplates = getDailyQuests(today);
@@ -113,12 +115,15 @@ export async function GET(request) {
 // POST - Update quest progress or claim reward
 export async function POST(request) {
   try {
-    const body = await request.json();
-    const { userId, action, questId, progressIncrement, progressType } = body;
+    const session = await getServerSession();
 
-    if (!userId) {
-      return NextResponse.json({ error: "userId required" }, { status: 400 });
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    const userId = session.user.email;
+    const body = await request.json();
+    const { action, questId, progressIncrement, progressType } = body;
 
     const today = new Date().toISOString().split("T")[0];
     const userQuestsRef = adminDb

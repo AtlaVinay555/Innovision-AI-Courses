@@ -32,7 +32,7 @@ export default function StatsCard({ userId }) {
   const fetchStats = async () => {
     try {
       // Fetch gamification stats
-      const statsRes = await fetch(`/api/gamification/stats?userId=${userId}`);
+      const statsRes = await fetch("/api/gamification/stats");
       const statsData = await statsRes.json();
 
       // Fetch roadmaps for course completion data

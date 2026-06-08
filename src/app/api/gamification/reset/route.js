@@ -1,18 +1,20 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin";
+import { getServerSession } from "@/lib/auth-server";
 
 /**
- * Reset gamification stats for a user
+ * Reset gamification stats for the authenticated user
  * Usage: POST /api/gamification/reset
- * Body: { userId: "user@example.com" }
  */
 export async function POST(request) {
   try {
-    const { userId } = await request.json();
+    const session = await getServerSession();
 
-    if (!userId) {
-      return NextResponse.json({ error: "userId required" }, { status: 400 });
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    const userId = session.user.email;
 
     const userRef = adminDb.collection("gamification").doc(userId);
     const resetData = {

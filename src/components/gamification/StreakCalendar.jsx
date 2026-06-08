@@ -36,7 +36,7 @@ export default function StreakCalendar({ userId }) {
   const fetchActivityData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/gamification/activity?userId=${userId}`);
+      const res = await fetch("/api/gamification/activity");
       if (res.ok) {
         const data = await res.json();
         setActivityData(data.activities || {});
