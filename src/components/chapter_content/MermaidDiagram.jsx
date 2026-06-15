@@ -83,7 +83,7 @@ const sanitizeMermaid = (chartStr) => {
             if (text.startsWith('{') || text.endsWith('}')) return match; 
             return `${id}{${cleanLabel(text)}}`;
         });
-        processed = processed.replace(/([A-Za-z0-9_-]+)\s*>([^\]]+)\]/g, (match, id, text) => {
+        processed = processed.replace(/([a-zA-Z0-9][a-zA-Z0-9_-]*)\s*>([^\]]+)\]/g, (match, id, text) => {
             return `${id}>${cleanLabel(text)}]`;
         });
 
@@ -123,6 +123,9 @@ export default function MermaidDiagram({ chart }) {
                 
                 // Sanitize the AI-generated syntax
                 const safeChart = sanitizeMermaid(chart);
+                
+                console.log("[Mermaid Original]:\n", chart);
+                console.log("[Mermaid Sanitized]:\n", safeChart);
 
                 // Check validity before rendering
                 try {
@@ -130,7 +133,12 @@ export default function MermaidDiagram({ chart }) {
                 } catch (parseErr) {
                     console.error("[Mermaid Validation Error]:", parseErr);
                     if (isMounted) {
-                        setError("Diagram unavailable for this topic.");
+                        setError({
+                            message: "Mermaid Parser Error",
+                            details: parseErr.message || String(parseErr),
+                            original: chart,
+                            sanitized: safeChart
+                        });
                         setLoading(false);
                     }
                     return; // Exit cleanly without throwing an Error
@@ -146,7 +154,12 @@ export default function MermaidDiagram({ chart }) {
             } catch (err) {
                 console.error("Failed to render Mermaid diagram:", err);
                 if (isMounted) {
-                    setError("Diagram unavailable for this topic.");
+                    setError({
+                        message: "Mermaid Render Error",
+                        details: err.message || String(err),
+                        original: chart,
+                        sanitized: chart // If it failed here, safeChart might not be accessible, but it's an unexpected render error
+                    });
                     setLoading(false);
                 }
             }
@@ -162,21 +175,48 @@ export default function MermaidDiagram({ chart }) {
     if (!chart) return null;
 
     if (error) {
+        const isDev = process.env.NODE_ENV === "development";
         return (
-            <div className="flex flex-col items-center justify-center p-6 bg-muted/20 border border-border/50 rounded-xl my-6 text-muted-foreground overflow-hidden w-full">
-                <AlertCircle className="w-8 h-8 mb-2 opacity-50" />
-                <p className="font-semibold text-sm text-foreground">Diagram unavailable for this topic</p>
-                <p className="text-xs mt-1 opacity-80 text-center">The AI-generated visualization could not be rendered.</p>
+            <div className="flex flex-col items-center justify-center p-6 bg-red-500/10 border border-red-500/20 rounded-xl my-6 text-foreground overflow-hidden w-full">
+                <AlertCircle className="w-8 h-8 mb-2 text-red-500 opacity-80" />
+                <p className="font-semibold text-sm text-red-500">{error.message || "Diagram Error"}</p>
+                <p className="text-xs mt-1 text-red-400 opacity-80 text-center">
+                    {isDev ? "Detailed error shown below:" : error.details?.split('\n')[0] || "Syntax error in diagram"}
+                </p>
                 
-                <div className="mt-4 w-full text-left">
-                    <div className="flex items-center gap-2 mb-2 text-xs font-semibold uppercase tracking-wider opacity-70">
-                        <FileCode2 className="w-4 h-4" />
-                        Raw Syntax (For Debugging)
+                {isDev && (
+                    <div className="mt-4 w-full text-left space-y-4">
+                        <div>
+                            <div className="flex items-center gap-2 mb-2 text-xs font-semibold uppercase tracking-wider text-red-500 opacity-70">
+                                <AlertCircle className="w-4 h-4" />
+                                Exact Error Details
+                            </div>
+                            <div className="text-xs text-red-400 p-3 bg-red-500/10 rounded-lg w-full overflow-x-auto whitespace-pre-wrap font-mono">
+                                {error.details}
+                            </div>
+                        </div>
+
+                        <div>
+                            <div className="flex items-center gap-2 mb-2 text-xs font-semibold uppercase tracking-wider opacity-70">
+                                <FileCode2 className="w-4 h-4" />
+                                Sanitized Syntax (Attempted)
+                            </div>
+                            <div className="text-xs opacity-70 p-3 bg-black/10 dark:bg-black/20 rounded-lg w-full overflow-x-auto whitespace-pre font-mono">
+                                {error.sanitized}
+                            </div>
+                        </div>
+
+                        <div>
+                            <div className="flex items-center gap-2 mb-2 text-xs font-semibold uppercase tracking-wider opacity-70">
+                                <FileCode2 className="w-4 h-4" />
+                                Original AI Syntax
+                            </div>
+                            <div className="text-xs opacity-70 p-3 bg-black/10 dark:bg-black/20 rounded-lg w-full overflow-x-auto whitespace-pre font-mono">
+                                {error.original}
+                            </div>
+                        </div>
                     </div>
-                    <div className="text-xs opacity-70 p-3 bg-black/10 dark:bg-black/20 rounded-lg w-full overflow-x-auto whitespace-pre font-mono">
-                        {chart}
-                    </div>
-                </div>
+                )}
             </div>
         );
     }
