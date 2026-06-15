@@ -1,4 +1,5 @@
 "use client";
+import PomodoroTimer from "@/components/PomodoroTimer";
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth";
@@ -70,7 +71,7 @@ export default function CourseDetailPage() {
       </div>
     );
   }
-
+  
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-5xl mx-auto p-6">
@@ -83,7 +84,7 @@ export default function CourseDetailPage() {
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Courses
         </Button>
-
+       
         {/* Course Header */}
         <div className="mb-8">
           <div className="flex items-start justify-between mb-4">
@@ -131,6 +132,9 @@ export default function CourseDetailPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Focus Timer */}
+        <PomodoroTimer />
 
         {/* Course Content */}
         <div className="space-y-6">
