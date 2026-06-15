@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin";
 import { getServerSession } from "@/lib/auth-server";
-import OpenAI from "openai";
-
-const openai = new OpenAI({
-    apiKey: process.env.GEMINI_API_KEY,
-    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
-});
+import { generateWithFallback } from "@/lib/gemini-config";
 
 // Helper to parse AI JSON response
 function parseJson(response) {
@@ -136,15 +131,19 @@ export async function GET(request) {
         Format: \`\`\`json [ { "id": "...", "title": "...", "description": "...", "rationale": "...", "isIdea": ... }, ... ] \`\`\`
         `;
 
-        const aiResponse = await openai.chat.completions.create({
-            model: "gemini-2.0-flash",
-            messages: [
-                { role: "system", content: "You are a smart educational counselor. Recommend specific courses or generate new roadmap ideas based on user history." },
-                { role: "user", content: prompt }
-            ]
-        });
+        const systemInstruction = "You are a smart educational counselor. Recommend specific courses or generate new roadmap ideas based on user history.";
 
-        const recData = parseJson(aiResponse.choices[0].message.content);
+        let recData = null;
+        try {
+            const result = await generateWithFallback(prompt, systemInstruction);
+            recData = parseJson(result.response.text());
+        } catch (apiError) {
+            console.error("[Recommendations API] Failed to generate:", apiError.message);
+            // On 429 Quota Exceeded or any fatal error, skip AI and fallback to defaults
+            if (apiError.status === 429) {
+                console.warn("[Recommendations API] Quota Exceeded, using fallback recommendations.");
+            }
+        }
 
         let recommendations = [];
         if (recData && Array.isArray(recData)) {

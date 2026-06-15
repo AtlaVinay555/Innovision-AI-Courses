@@ -8,21 +8,35 @@ import { toast } from "sonner";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { motion, AnimatePresence } from "framer-motion";
+import { useGeminiRequest } from "@/hooks/useGeminiRequest";
 
 const RecommendedCourses = ({ query = "" }) => {
     const [recommendations, setRecommendations] = useState([]);
     const [loading, setLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState(null);
 
+    const { request } = useGeminiRequest();
+
     const fetchRecommendations = async (searchQuery = "") => {
         setLoading(true);
         try {
-            const url = searchQuery
-                ? `/api/recommendations?query=${encodeURIComponent(searchQuery)}`
-                : "/api/recommendations";
-            const response = await fetch(url);
-            const data = await response.json();
-            if (data.success) {
+            const apiFn = async () => {
+                const url = searchQuery
+                    ? `/api/recommendations?query=${encodeURIComponent(searchQuery)}`
+                    : "/api/recommendations";
+                const response = await fetch(url);
+                if (response.status === 429) {
+                    const err = new Error("QUOTA_EXCEEDED");
+                    err.status = 429;
+                    throw err;
+                }
+                const data = await response.json();
+                if (!data.success) throw new Error("Failed");
+                return data;
+            };
+            
+            const data = await request(`rec:user:${searchQuery}`, apiFn);
+            if (data) {
                 setRecommendations(data.recommendations);
                 setLastUpdated(data.lastUpdated);
             }
@@ -34,20 +48,32 @@ const RecommendedCourses = ({ query = "" }) => {
     };
 
     useEffect(() => {
+        let cancelled = false;
+        
         // Initial fetch or fetch on manual refresh
         if (!query) {
-            fetchRecommendations();
+            const run = async () => {
+                if (cancelled) return;
+                await fetchRecommendations();
+            };
+            run();
         }
+        
+        return () => { cancelled = true; };
     }, []);
 
     useEffect(() => {
         if (!query) return;
 
+        let cancelled = false;
         const timer = setTimeout(() => {
-            fetchRecommendations(query);
+            if (!cancelled) fetchRecommendations(query);
         }, 800); // 800ms debounce
 
-        return () => clearTimeout(timer);
+        return () => {
+            clearTimeout(timer);
+            cancelled = true;
+        };
     }, [query]);
 
     const handleFeedback = async (courseId, feedbackType) => {

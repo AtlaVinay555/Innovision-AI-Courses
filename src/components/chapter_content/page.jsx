@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Clock } from "lucide-react";
 import Sidebar from "../sidebar/page";
@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { loader } from "../ui/Custom/ToastLoader";
 import CertificateDialog from "@/components/certificates/CertificateDialog";
 import { useAuth } from "@/contexts/auth";
+import { useGeminiRequest } from "@/hooks/useGeminiRequest";
 
 // Calculate reading time based on word count (200 words per minute average)
 const calculateReadingTime = (content) => {
@@ -67,8 +68,10 @@ const Page = ({ chapter, roadmapId }) => {
     const [tasks, setTasks] = useState([]);
     const [roadmap, setRoadmap] = useState({});
     const [certDialogOpen, setCertDialogOpen] = useState(false);
+    const hasFetchedRef = useRef(false);
     const { showLoader, hideLoader } = loader();
     const { user } = useAuth();
+    const { request: geminiRequest } = useGeminiRequest();
 
     async function getRoadmap() {
         try {
@@ -91,7 +94,10 @@ const Page = ({ chapter, roadmapId }) => {
         }
     }
 
-    async function fetchChapter() {
+    async function fetchChapter(isManualRetry = false) {
+        if (!isManualRetry && hasFetchedRef.current) return;
+        hasFetchedRef.current = true;
+        
         setIsLoading(true);
         setError(null);
         setNotFound(false);
@@ -169,7 +175,7 @@ const Page = ({ chapter, roadmapId }) => {
                     toast.error("Error checking chapter generation status");
                     reject(error);
                 }
-            }, 3000);
+            }, 5000);
         });
     }
 
@@ -193,22 +199,34 @@ const Page = ({ chapter, roadmapId }) => {
         setGenerating(true);
 
         try {
-            const chapterResponse = await fetch("/api/chapter-prompt", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    prompt: chapterDetails,
-                    number: chapter,
-                    roadmapId,
-                }),
-            });
+            const fetchChapterGen = async () => {
+                const chapterResponse = await fetch("/api/chapter-prompt", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        prompt: chapterDetails,
+                        number: chapter,
+                        roadmapId,
+                    }),
+                });
+                if (chapterResponse.status === 429) {
+                    const err = new Error("QUOTA_EXCEEDED");
+                    err.status = 429;
+                    throw err;
+                }
+                if (!chapterResponse.ok && chapterResponse.status !== 202) {
+                    throw new Error(`Failed to start chapter generation: ${chapterResponse.status}`);
+                }
+                // Return a simple object indicating success since the response is empty for 202
+                return { status: chapterResponse.status };
+            };
 
-            if (chapterResponse.status === 202) {
+            const result = await geminiRequest(`chapter:${roadmapId}:${chapter}`, fetchChapterGen);
+
+            if (result.status === 202) {
                 await handlePendingChapter();
-            } else if (!chapterResponse.ok) {
-                throw new Error(
-                    `Failed to start chapter generation: ${chapterResponse.status}`
-                );
+            } else if (result.status !== 202 && result.status !== 200) {
+                throw new Error(`Failed to start chapter generation`);
             }
         } catch (error) {
             console.error("Error starting chapter generation:", error);
@@ -275,17 +293,26 @@ const Page = ({ chapter, roadmapId }) => {
                 setSelectedIndex(parsedIndex);
             }
         }
-    }, [subtopicParam, chapterData]);
+    }, [subtopicParam, chapterData?.subtopics?.length, tasks.length]);
 
     useEffect(() => {
-        if (roadmapId && chapter) {
-            fetchChapter();
+        let cancelled = false;
+        
+        if (roadmapId && chapter && !hasFetchedRef.current) {
+            const run = async () => {
+                if (cancelled) return;
+                await fetchChapter();
+            };
+            run();
         }
 
         window.addEventListener("keydown", handleKeyDown);
 
         return () => {
+            cancelled = true;
             window.removeEventListener("keydown", handleKeyDown);
+            // reset ref when unmounting or changing chapters
+            hasFetchedRef.current = false;
         };
     }, [roadmapId, chapter]);
 
@@ -297,7 +324,7 @@ const Page = ({ chapter, roadmapId }) => {
             for (const word of type) {
                 displayType += word[0].toUpperCase() + word.slice(1) + " ";
             }
-            if (rm.chapters) {
+            if (rm.chapters && chapterData?.subtopics?.length) {
                 rm.chapters[Number(chapter - 1)].contentOutline.length <
                     chapterData.subtopics.length + tasks.length &&
                     rm.chapters[Number(chapter - 1)]?.contentOutline.push(
@@ -305,7 +332,7 @@ const Page = ({ chapter, roadmapId }) => {
                     );
             }
         }
-    }, [roadmap, tasks]);
+    }, [roadmap?.chapters?.length, tasks.length, chapterData?.subtopics?.length]);
 
     useEffect(() => {
         getRoadmap();
@@ -323,7 +350,7 @@ const Page = ({ chapter, roadmapId }) => {
     }
 
     if (error) {
-        return <ChapterError fetchChapter={fetchChapter} error={error} />;
+        return <ChapterError fetchChapter={() => fetchChapter(true)} error={error} />;
     }
     if (notFound) {
         return <ChapterNotFound roadmapId={roadmapId} />;

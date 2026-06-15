@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
-import { adminDb } from "@/lib/firebase-admin";
+import { getAdminDb } from "@/lib/firebase-admin";
 
 export async function DELETE(request, { params }) {
   try {
@@ -10,6 +10,17 @@ export async function DELETE(request, { params }) {
     }
 
     const { id: roadmapId } = params;
+
+    const adminDb = getAdminDb();
+    if (!adminDb) {
+      if (process.env.NODE_ENV === "development") {
+        return NextResponse.json({
+          success: true,
+          message: "Successfully unenrolled from course (mock)",
+        });
+      }
+      return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+    }
 
     // Delete all chapter subcollections first
     const chaptersRef = adminDb

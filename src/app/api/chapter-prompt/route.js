@@ -1,36 +1,54 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
 import { getServerSession } from "@/lib/auth-server";
-import { adminDb } from "@/lib/firebase-admin";
+import { getAdminDb } from "@/lib/firebase-admin";
+import { generateWithFallback } from "@/lib/gemini-config";
 
-export const openai = new OpenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
-});
+console.log(`[Chapter API] Imported centralized Gemini configuration.`);
 
-function parseJson(response) {
-  const jsonMatch = response.match(/```json\n([\s\S]*?)\n```/);
+const requestCache = new Map(); // Store last generation timestamp per user
 
-  if (jsonMatch) {
-    const jsonString = jsonMatch[1].trim();
-    try {
-      return JSON.parse(jsonString);
-    } catch (error) {
-      console.error("Error parsing extracted JSON:", error);
-      return null;
-    }
-  } else {
-    console.error("No JSON found in the response, trying raw parse...");
-    try {
-      return JSON.parse(response);
-    } catch (error) {
-      console.error("Final JSON parse failed:", error);
-      return null;
-    }
+function parseJsonSafe(response) {
+  let text = response.trim();
+  // Strip markdown code wrappers if present
+  text = text.replace(/^```json\s?/, "").replace(/^```\s?/, "").replace(/\s?```$/, "").trim();
+  
+  try {
+    const parsed = JSON.parse(text);
+    console.log("[GenerateChapter] Raw JSON parsing successful.");
+    return parsed;
+  } catch (error) {
+    console.error("[GenerateChapter] Final JSON parse failed. Response snippet:", text.substring(0, 200));
+    return null;
   }
 }
 
+function sanitizeChapterContent(data) {
+  if (!data || !Array.isArray(data.subtopics)) return data;
+
+  data.subtopics.forEach(subtopic => {
+    if (Array.isArray(subtopic.content)) {
+      subtopic.content.forEach(item => {
+        if (item.type === "mermaid" && typeof item.content === "string") {
+          // Remove Markdown code block wrappers like ```mermaid\n ... \n```
+          let cleaned = item.content.replace(/^```mermaid\s*\n?/i, '');
+          cleaned = cleaned.replace(/^```\s*\n?/i, '');
+          cleaned = cleaned.replace(/\n?```$/i, '');
+          item.content = cleaned.trim();
+        }
+      });
+    }
+  });
+
+  return data;
+}
+
 async function updateDatabase(content, chapter, roadmapId, session) {
+  const adminDb = getAdminDb();
+  if (!adminDb) {
+    console.log("Mock DB update for chapter:", chapter);
+    return;
+  }
+
   const docRef = adminDb
     .collection("users")
     .doc(session.user.email)
@@ -54,44 +72,66 @@ async function updateDatabase(content, chapter, roadmapId, session) {
 }
 
 async function generateChapter(prompt, number, roadmapId, session) {
+  console.log(`[GenerateChapter] Starting generation for chapter ${number}`);
+  const adminDb = getAdminDb();
   const docRef = adminDb
-    .collection("users")
-    .doc(session.user.email)
-    .collection("roadmaps")
-    .doc(roadmapId)
-    .collection("chapters")
-    .doc(number);
+    ? adminDb
+        .collection("users")
+        .doc(session.user.email)
+        .collection("roadmaps")
+        .doc(roadmapId)
+        .collection("chapters")
+        .doc(number)
+    : null;
 
   try {
-    const response = await openai.chat.completions.create({
-      model: "gemini-2.0-flash",
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a chapter content generator that creates structured, engaging, and detailed educational content across various subjects based on provided chapter details in JSON format , including title, learningObjectives, and contentOutline, returning a JSON response with title, chapterNumber, learningObjectives, chapterDescription, subtopics (each with a header, title, content as an array of {type: (header1, header2, header3, para, points, code), content: (text)}, where points are in markdown, let the content be array of points for points type. If type is code, content is a Markdown-formatted string in the exact format: ```(programming language name) (code)```, otherResources which properly align with the topic(upto 5 resources), along with the well-balanced tasks (upto 3 tasks) in JSON format (multiple-choice|fill-in-the-blank|match-the-following), ensuring task type aligns with key concepts, fill-in-the-blanks strictly use '________' for blanks and include an array of acceptableAnswers with synonyms or variations of the correct answer and include an answer, multiple-choice tasks have four options, match-the-following has terms element containing lhs array and rhs array, and their match indexes as the answer array and an explanation, and answers are formatted properly while maintaining a structured and explanation is provided for all the tasks, let everything be simple string don't give latex responses.",
-        },
-        {
-          role: "user",
-          content: JSON.stringify(prompt),
-        },
-      ],
-    });
+    console.log(`[GenerateChapter] Calling centralized Gemini API...`);
+    
+    const systemInstruction = `You are an expert educational content generator. Generate structured chapter content in valid JSON format. Include title, chapterNumber, learningObjectives, chapterDescription, and subtopics (each containing a 'content' array of objects with {type: (header1, header2, header3, para, points, code, mermaid), content: (text)}). 
 
-    const data = parseJson(response.choices[0].message.content);
+VISUAL LEARNING (MERMAID) RULES:
+1. You may occasionally inject a block with type: "mermaid" containing a raw Mermaid.js string (e.g., graph TD; A[Client]-->B[Server];).
+2. BE SELECTIVE: ONLY generate diagrams for workflows, architectural pipelines, system interactions, hierarchies, or state transitions. DO NOT generate diagrams for basic definitions, history, or simple concepts.
+3. KEEP IT SMALL: Diagrams must be under 8 nodes for mobile readability.
+4. SAFE SYNTAX: Use simple graph TD or graph LR. Do NOT use quotes, parentheses, or special characters inside node labels. Do not wrap the string in markdown backticks.
+
+Ensure text explanations remain your primary focus. Visuals are only enhancements. Also generate tasks (upto 3) (multiple-choice|fill-in-the-blank|match-the-following). Ensure valid JSON string values only.`;
+
+    const result = await generateWithFallback(prompt, systemInstruction);
+    const responseText = result.response.text();
+
+    console.log(`[GenerateChapter] Gemini API response received. Parsing JSON...`);
+
+    const data = parseJsonSafe(responseText);
 
     if (!data) {
+      console.error("[GenerateChapter] Parsing completely failed.");
       throw new Error("Failed to parse AI response into valid JSON");
     }
 
-    await updateDatabase(data, number, roadmapId, session);
+    console.log(`[GenerateChapter] JSON parsed successfully. Sanitizing...`);
+    const sanitizedData = sanitizeChapterContent(data);
+
+    console.log(`[GenerateChapter] Saving to Database...`);
+    await updateDatabase(sanitizedData, number, roadmapId, session);
+    console.log(`[GenerateChapter] Successfully completed for chapter ${number}.`);
   } catch (error) {
-    console.error("Error generating chapter:", error);
-    await docRef.update({ process: "failed", error: error.message });
+    console.error("[GenerateChapter] Error encountered:", error);
+    if (docRef) {
+      let errorMessage = error.message;
+      if (error.message === "QUOTA_EXCEEDED" || error.message?.includes("quota") || error.status === 429) {
+        errorMessage = "API rate limit reached. Please wait a minute and try again.";
+      } else if (error.message?.includes("is not found for API version") || error.message?.includes("models/")) {
+        errorMessage = "Model compatibility error. The system is falling back to a secondary model.";
+      }
+      await docRef.update({ process: "failed", error: errorMessage });
+    }
   }
 }
 
 async function cleanupStuckChapters(session, roadmapId, number) {
+  const adminDb = getAdminDb();
+  if (!adminDb) return;
   const docRef = adminDb
     .collection("users")
     .doc(session.user.email)
@@ -121,19 +161,33 @@ export async function POST(req) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
 
-  try {
-    const chapterDocRef = adminDb
-      .collection("users")
-      .doc(session.user.email)
-      .collection("roadmaps")
-      .doc(roadmapId)
-      .collection("chapters")
-      .doc(number);
+  // Rate limiting: 10 seconds cooldown between generation requests
+  const now = Date.now();
+  const lastReq = requestCache.get(session.user.email);
+  if (lastReq && now - lastReq < 10000) {
+    return NextResponse.json({ message: "Please wait 10 seconds before generating another chapter to prevent spam." }, { status: 429 });
+  }
+  requestCache.set(session.user.email, now);
 
-    await chapterDocRef.set({
-      process: "pending",
-      timestamp: Date.now(),
-    });
+  try {
+    const adminDb = getAdminDb();
+    
+    if (adminDb) {
+      const chapterDocRef = adminDb
+        .collection("users")
+        .doc(session.user.email)
+        .collection("roadmaps")
+        .doc(roadmapId)
+        .collection("chapters")
+        .doc(number);
+
+      await chapterDocRef.set({
+        process: "pending",
+        timestamp: Date.now(),
+      });
+    } else {
+      console.log(`[POST] Mock Mode: Skipping pending state save for ${number}`);
+    }
 
     setTimeout(() => {
       cleanupStuckChapters(session, roadmapId, number);

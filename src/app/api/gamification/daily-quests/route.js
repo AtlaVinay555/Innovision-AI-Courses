@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
+<<<<<<< HEAD
+import { getAdminDb } from "@/lib/firebase-admin";
+=======
 import { adminDb } from "@/lib/firebase-admin";
 import { getServerSession } from "@/lib/auth-server";
+>>>>>>> upstream/main
 
 // Daily quest templates - rotates based on day
 const QUEST_TEMPLATES = [
@@ -62,6 +66,14 @@ export async function GET(request) {
 
     const today = new Date().toISOString().split("T")[0];
     const questTemplates = getDailyQuests(today);
+
+    const adminDb = getAdminDb();
+    if (!adminDb) {
+      if (process.env.NODE_ENV === "development") {
+        return NextResponse.json({ date: today, quests: questTemplates.map(q => ({ ...q, progress: 0, completed: false, claimed: false })), totalXPEarned: 0, allCompleted: false, allClaimed: false, _mock: true });
+      }
+      return NextResponse.json({ error: "Firebase not configured" }, { status: 503 });
+    }
 
     // Get user's quest progress for today
     const userQuestsRef = adminDb
@@ -126,6 +138,15 @@ export async function POST(request) {
     const { action, questId, progressIncrement, progressType } = body;
 
     const today = new Date().toISOString().split("T")[0];
+    
+    const adminDb = getAdminDb();
+    if (!adminDb) {
+      if (process.env.NODE_ENV === "development") {
+        return NextResponse.json({ success: true, _mock: true });
+      }
+      return NextResponse.json({ error: "Firebase not configured" }, { status: 503 });
+    }
+
     const userQuestsRef = adminDb
       .collection("users")
       .doc(userId)

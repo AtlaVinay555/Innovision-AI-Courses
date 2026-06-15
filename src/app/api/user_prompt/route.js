@@ -1,30 +1,25 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
-import { adminDb, FieldValue } from "@/lib/firebase-admin";
+import { getAdminDb, FieldValue } from "@/lib/firebase-admin";
 import { nanoid } from "nanoid";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { canGenerateCourse } from "@/lib/premium";
 import { createNotification } from "@/lib/create-notification";
+import { generateWithFallback } from "@/lib/gemini-config";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({
-  model: "gemini-2.0-flash",
-  generationConfig: {
-    temperature: 0.7,
-    topP: 0.8,
-    topK: 40,
-    maxOutputTokens: 8192,
-    responseMimeType: "application/json",
-  },
-  safetySettings: [
-    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
-    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
-    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
-    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
-  ],
-});
+console.log(`[Roadmap API] Imported centralized Gemini configuration.`);
+
+const requestCache = new Map(); // Store last generation timestamp per user
 
 async function updateDatabase(details, id, user, retries = 3, context = {}) {
+  const adminDb = getAdminDb();
+  if (!adminDb) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("Skipping DB update (adminDb is null). Details:", details);
+      return true; // Mock success
+    }
+    return false;
+  }
+  
   const docRef = adminDb.collection("users").doc(user.email).collection("roadmaps").doc(id);
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -59,12 +54,9 @@ function cleanJsonResponse(text) {
     .trim();
 }
 
-async function generateRoadmap(prompt, id, session, user_prompt) {
-  const docRef = adminDb.collection("users").doc(session.user.email).collection("roadmaps").doc(id);
-
+async function generateRoadmap(prompt, id, session, user_prompt, requestId = "unknown") {
   try {
-    const result = await model.generateContent(`
-You are an expert curriculum designer. Generate a complete learning roadmap in strict JSON format.
+    const systemInstruction = `You are an expert curriculum designer. Generate a complete learning roadmap in strict JSON format.
 
 Return ONLY valid JSON (no markdown, no explanations) with this exact structure:
 {
@@ -81,254 +73,175 @@ Return ONLY valid JSON (no markdown, no explanations) with this exact structure:
   ]
 }
 
-If the topic is not suitable for a structured course, return exactly: {"error": "unsuitable"}
+If the topic is not suitable for a structured course, return exactly: {"error": "unsuitable"}`;
 
-Topic: ${prompt}
-    `);
-
+    console.log(`[${requestId}] [GEMINI START] Executing generateWithFallback...`);
+    const result = await generateWithFallback(prompt, systemInstruction, `roadmap:${prompt.substring(0, 20)}`);
     const response = result.response;
     const rawText = response.text();
+    console.log(`[${requestId}] [GEMINI RESPONSE] Received length: ${rawText.length}`);
     const cleanedText = cleanJsonResponse(rawText);
 
     let parsed;
     try {
       parsed = JSON.parse(cleanedText);
     } catch (parseError) {
-      console.error("JSON Parse failed:", cleanedText);
+      console.error(`[${requestId}] JSON Parse failed:`, cleanedText);
       throw new Error(`Invalid JSON from Gemini: ${parseError.message}`);
     }
 
     if (parsed.error === "unsuitable") {
-      const dbSuccess = await updateDatabase(
-        {
-          message: "This topic is not suitable for a structured course.",
-          process: "unsuitable",
-        },
-        id,
-        session.user,
-        3,
-        { operation: 'unsuitable_topic', prompt }
-      );
-
-      if (!dbSuccess) {
-        console.error("Database update failed for unsuitable topic:", {
-          userId: session.user.email,
-          roadmapId: id,
-          prompt,
-          operation: 'unsuitable_topic'
-        });
-      }
+      await updateDatabase({ message: "This topic is not suitable.", process: "unsuitable" }, id, session.user, 3, { operation: 'unsuitable_topic' });
       return;
     }
 
-    const difficulty = user_prompt.difficulty === "in-depth" ? "inDepth" : user_prompt.difficulty;
+    const difficulty = user_prompt.difficulty === "in-depth" ? "inDepth" : (user_prompt.difficulty || "balanced");
 
-    await adminDb.collection("users").doc(session.user.email).set(
-      {
+    const adminDb = getAdminDb();
+    if (adminDb) {
+      await adminDb.collection("users").doc(session.user.email).set({
         email: session.user.email,
         createdAt: FieldValue.serverTimestamp(),
         roadmapLevel: {},
-      },
-      { merge: true }
-    );
+      }, { merge: true });
+    }
 
-    await updateDatabase(
-      {
-        ...parsed,
-        createdAt: Date.now(),
-        difficulty,
-        process: "completed",
-      },
-      id,
-      session.user,
-      3,
-      { operation: 'course_completion', prompt }
-    );
+    await updateDatabase({
+      ...parsed,
+      createdAt: Date.now(),
+      difficulty,
+      process: "completed",
+    }, id, session.user, 3, { operation: 'course_completion' });
 
     // Create notification for completion
     try {
-      await createNotification(adminDb, {
-        userId: session.user.email,
-        title: "Course Ready!",
-        body: `Your generated course is ready.`,
-        type: "progress",
-        link: `/roadmap/${id}`,
-      });
+      if (adminDb) {
+        await createNotification(adminDb, {
+          userId: session.user.email,
+          title: "Course Ready!",
+          body: `Your generated course is ready.`,
+          type: "progress",
+          link: `/roadmap/${id}`,
+        });
+      }
     } catch (notifError) {
-      console.warn("Failed to create course generation notification:", notifError);
+      console.warn(`[${requestId}] Failed to create course generation notification:`, notifError);
     }
 
     // Award 10 XP for generating a course
     try {
-      const statsRef = adminDb.collection("gamification").doc(session.user.email);
-      await adminDb.runTransaction(async (transaction) => {
-        const statsDoc = await transaction.get(statsRef);
-        const xpGained = 10;
-        let stats = statsDoc.exists
-          ? statsDoc.data()
-          : {
-            xp: 0,
-            level: 1,
-            streak: 1,
-            badges: [],
-            rank: 0,
-            achievements: [],
-            lastActive: new Date().toISOString(),
-          };
+      if (adminDb) {
+        const statsRef = adminDb.collection("gamification").doc(session.user.email);
+        await adminDb.runTransaction(async (transaction) => {
+          const statsDoc = await transaction.get(statsRef);
+          const xpGained = 10;
+          let stats = statsDoc.exists
+            ? statsDoc.data()
+            : {
+              xp: 0,
+              level: 1,
+              streak: 1,
+              badges: [],
+              rank: 0,
+              achievements: [],
+              lastActive: new Date().toISOString(),
+            };
 
-        const newXP = (stats.xp || 0) + xpGained;
-        const newLevel = Math.floor(newXP / 500) + 1;
+          const newXP = (stats.xp || 0) + xpGained;
+          const newLevel = Math.floor(newXP / 500) + 1;
 
-        transaction.set(
-          statsRef,
-          {
-            ...stats,
-            xp: newXP,
-            level: newLevel,
-            lastActive: new Date().toISOString(),
-            achievements: [
-              ...(stats.achievements || []),
-              {
-                title: "New Course Generated!",
-                description: "You generated a new AI course",
-                xp: xpGained,
-                timestamp: new Date().toISOString(),
-              },
-            ],
-          },
-          { merge: true }
-        );
-      });
-    } catch (xpError) {
-      console.error("Failed to award XP for course generation:", xpError);
-    }
-  } catch (error) {
-    console.error("Gemini generation failed:", {
-      userId: session.user.email,
-      roadmapId: id,
-      prompt,
-      operation: 'gemini_generation',
-      error: {
-        message: error.message,
-        status: error.status,
-        code: error.code,
-        stack: error.stack
+          transaction.set(
+            statsRef,
+            {
+              ...stats,
+              xp: newXP,
+              level: newLevel,
+              lastActive: new Date().toISOString(),
+              achievements: [
+                ...(stats.achievements || []),
+                {
+                  title: "New Course Generated!",
+                  description: "You generated a new AI course",
+                  xp: xpGained,
+                  timestamp: new Date().toISOString(),
+                },
+              ],
+            },
+            { merge: true }
+          );
+        });
       }
-    });
-
-    let userMessage = "There was an error while generating your roadmap.";
-    let detectedCondition = 'unknown';
-
-    if (error.message?.includes("API key") || error.message?.includes("API_KEY")) {
-      userMessage = "API key error. Please contact support or try again later.";
-      detectedCondition = 'api_key_error';
-    } else if (error.message?.includes("SAFETY")) {
-      userMessage = "Content was blocked by safety filters. Try simpler wording.";
-      detectedCondition = 'safety_filter';
-    } else if (error.message?.includes("quota") || error.status === 429) {
-      userMessage = "Rate limit reached. Please wait a minute and try again.";
-      detectedCondition = 'rate_limit';
-    } else if (error.message?.includes("Invalid JSON")) {
-      userMessage = "AI returned invalid format. Please try again.";
-      detectedCondition = 'invalid_json';
-    } else if (error.message?.includes("token") || error.message?.includes("maximum")) {
-      userMessage = "Topic too long. Try fewer modules or shorter names.";
-      detectedCondition = 'token_limit';
+    } catch (xpError) {
+      console.error(`[${requestId}] Failed to award XP for course generation:`, xpError);
     }
 
-    console.error("Error condition detected:", {
-      userId: session.user.email,
-      roadmapId: id,
-      prompt,
-      detectedCondition,
-      userMessage
-    });
-
-    const dbSuccess = await updateDatabase(
-      {
-        message: userMessage,
-        process: "error",
-        errorDetails: error.message,
-      },
-      id,
-      session.user,
-      3,
-      { operation: 'error_handling', prompt, detectedCondition }
-    );
-
-    if (!dbSuccess) {
-      console.error("Database update failed during error handling:", {
-        userId: session.user.email,
-        roadmapId: id,
-        prompt,
-        operation: 'error_handling',
-        detectedCondition,
-        originalError: error.message
-      });
-    }
+    console.log(`[${requestId}] Roadmap generated successfully.`);
+  } catch (error) {
+    console.error(`[${requestId}] Gemini generation failed:`, error);
+    await updateDatabase({ message: "Generation error", process: "error" }, id, session.user, 3, { operation: 'error_handling' });
   }
 }
-
-// Removed - now using canGenerateCourse from premium.js
 
 export async function POST(req) {
   try {
     const user_prompt = await req.json();
+    const requestId = user_prompt.requestId || req.headers.get("X-Request-ID") || 'unknown-req';
+    console.log(`\n===========================================`);
+    console.log(`[API ROUTE HIT] [${requestId}] POST /api/user_prompt`);
     const session = await getServerSession();
 
     if (!session?.user) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+      console.warn(`[REQUEST REJECTED: AUTH] [${requestId}] Unauthorized request.`);
+      return NextResponse.json({ success: false, reason: "Unauthorized", layer: "auth", requestId }, { status: 403 });
     }
 
-    if (!user_prompt?.prompt || user_prompt.prompt.trim().length === 0) {
-      return NextResponse.json({ message: "Prompt is required" }, { status: 400 });
+    const now = Date.now();
+    const lastReq = requestCache.get(session.user.email);
+    if (lastReq && now - lastReq < 15000) {
+      console.warn(`[REQUEST REJECTED: COOLDOWN] [${requestId}] User requested before 15s cooldown.`);
+      return NextResponse.json({ success: false, reason: "Please wait 15 seconds before generating another course.", layer: "cooldown", requestId }, { status: 429 });
+    }
+    requestCache.set(session.user.email, now);
+
+    if (!user_prompt?.prompt) {
+      console.warn(`[REQUEST REJECTED: VALIDATION] [${requestId}] Missing prompt.`);
+      return NextResponse.json({ success: false, reason: "Prompt is required", layer: "validation", requestId }, { status: 400 });
     }
 
-    if (user_prompt.prompt.length > 1500) {
-      return NextResponse.json({ message: "Prompt too long. Maximum 1500 characters." }, { status: 400 });
-    }
-
-    // Check if user can generate more courses based on premium status
     const eligibility = await canGenerateCourse(session.user.email);
     if (!eligibility.canGenerate) {
-      return NextResponse.json(
-        {
-          message: eligibility.reason,
-          isPremium: eligibility.isPremium,
-          courseCount: eligibility.courseCount,
-          needsUpgrade: !eligibility.isPremium
-        },
-        { status: 403 }
-      );
+      console.warn(`[REQUEST REJECTED: PREMIUM LIMIT] [${requestId}] Reason: ${eligibility.reason}`);
+      return NextResponse.json({ success: false, reason: eligibility.reason, layer: "premium_limit", requestId }, { status: 403 });
     }
 
     const roadmapId = nanoid(20);
+    console.log(`[API ROUTE HIT] [${requestId}] Initializing roadmap: ${roadmapId}`);
 
     const dbSuccess = await updateDatabase(
       { process: "pending", createdAt: Date.now() },
       roadmapId,
       session.user,
       3,
-      { operation: 'initialize_roadmap', prompt: user_prompt.prompt }
+      { operation: 'initialize_roadmap' }
     );
 
     if (!dbSuccess) {
-      console.error("Failed to initialize roadmap:", {
-        userId: session.user.email,
-        roadmapId,
-        prompt: user_prompt.prompt,
-        operation: 'initialize_roadmap'
-      });
-      return NextResponse.json({ message: "Failed to initialize roadmap" }, { status: 500 });
+      return NextResponse.json({ message: "Failed to initialize" }, { status: 500 });
     }
 
-    setTimeout(() => {
-      generateRoadmap(user_prompt.prompt, roadmapId, session, user_prompt);
-    }, 0);
+    // Run background task
+    (async () => {
+      try {
+        await generateRoadmap(user_prompt.prompt, roadmapId, session, user_prompt, requestId);
+      } catch (err) {
+        console.error(`[${requestId}] Background task fatal error:`, err);
+      }
+    })();
 
+    console.log(`[API ROUTE HIT] [${requestId}] Returning 202 Accepted.`);
     return NextResponse.json({ process: "pending", id: roadmapId }, { status: 202 });
   } catch (error) {
-    console.error("POST /api/user_prompt error:", error);
+    console.error("POST error:", error);
     return NextResponse.json({ message: "Internal server error" }, { status: 500 });
   }
 }

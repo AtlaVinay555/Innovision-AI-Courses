@@ -1,6 +1,6 @@
 "use client";
 import { createContext, useContext, useEffect, useState } from "react";
-import { GoogleAuthProvider, GithubAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import { GoogleAuthProvider, GithubAuthProvider, signInWithPopup, signInWithRedirect, signOut, onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
@@ -31,18 +31,26 @@ export function AuthProvider({ children }) {
           }
 
           // 2. Fetch additional user data from Firestore
-          const userRef = doc(db, "users", firebaseUser.email);
-          const userSnap = await getDoc(userRef);
+          let userData = {};
+          try {
+            const userRef = doc(db, "users", firebaseUser.email);
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+              userData = userSnap.data();
+            }
+          } catch (firestoreError) {
+            // "Failed to get document because the client is offline" usually means no internet, or project doesn't exist locally.
+            // Safely fallback to empty user data in development without breaking the app.
+            if (process.env.NODE_ENV !== "development") {
+              console.warn("AUTH_CONTEXT: Firestore fetch failed. User will have basic profile.", firestoreError.message);
+            }
+          }
 
           // 3. ONLY set the user state after cookie is (attempted to be) synced
-          if (userSnap.exists()) {
-            setUser({
-              ...firebaseUser,
-              ...userSnap.data(),
-            });
-          } else {
-            setUser(firebaseUser);
-          }
+          setUser({
+            ...firebaseUser,
+            ...userData,
+          });
         } catch (error) {
           console.error("AUTH_CONTEXT: error during sync/fetch", error);
           setUser(firebaseUser); // Fallback to basic user
@@ -72,7 +80,12 @@ export function AuthProvider({ children }) {
       return result.user;
     } catch (error) {
       console.error("Error signing in with Google:", error);
-      throw error;
+      if (error.message && error.message.includes("Cross-Origin-Opener-Policy")) {
+        console.warn("COOP blocked popup. Falling back to redirect...");
+        await signInWithRedirect(auth, provider);
+      } else {
+        throw error;
+      }
     }
   };
 
@@ -84,7 +97,12 @@ export function AuthProvider({ children }) {
       return result.user;
     } catch (error) {
       console.error("Error signing in with Github:", error);
-      throw error;
+      if (error.message && error.message.includes("Cross-Origin-Opener-Policy")) {
+        console.warn("COOP blocked popup. Falling back to redirect...");
+        await signInWithRedirect(auth, provider);
+      } else {
+        throw error;
+      }
     }
   };
 
@@ -128,7 +146,11 @@ export function AuthProvider({ children }) {
         });
       }
     } catch (error) {
-      console.error("Error saving user information:", error);
+      if (process.env.NODE_ENV !== "development") {
+        console.error("Error saving user information:", error);
+      } else {
+        console.warn("Skipping user save to Firestore in local dev (client offline).");
+      }
     }
   };
 
