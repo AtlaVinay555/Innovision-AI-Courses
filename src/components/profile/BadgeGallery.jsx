@@ -164,7 +164,7 @@ export default function BadgeGallery({ earnedBadges: propBadges = [], userName =
       if (!user?.email) return;
 
       try {
-        const res = await fetch(`/api/gamification/stats?userId=${user.email}`);
+        const res = await fetch("/api/gamification/stats");
         const data = await res.json();
         if (data?.badges && Array.isArray(data.badges)) {
           setEarnedBadges(data.badges);

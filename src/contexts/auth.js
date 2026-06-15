@@ -130,6 +130,7 @@ export function AuthProvider({ children }) {
           email: user.email,
           image: user.photoURL,
           provider: providerName,
+          username: user.email.split("@")[0],
           xp: 0,
           roadmapLevel: {
             fast: 0,

@@ -82,7 +82,7 @@ export const XpProvider = ({ children }) => {
       const res = await fetch("/api/gamification/award-badge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.email, badgeId }),
+        body: JSON.stringify({ badgeId }),
       });
       
       if (!res.ok) {
@@ -266,11 +266,15 @@ export const XpProvider = ({ children }) => {
     }
 
     try {
+<<<<<<< HEAD
       const res = await fetch(`/api/gamification/stats?userId=${user.email}`);
       if (!res.ok) {
         console.warn(`[Gamification API] Error ${res.status} fetching stats`);
         return;
       }
+=======
+      const res = await fetch("/api/gamification/stats");
+>>>>>>> upstream/main
       const data = await res.json();
 
       if (data && typeof data.xp === "number") {
@@ -332,7 +336,6 @@ export const XpProvider = ({ children }) => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            userId: user.email,
             action,
             value: finalValue,
           }),

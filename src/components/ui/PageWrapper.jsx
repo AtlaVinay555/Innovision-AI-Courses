@@ -151,7 +151,9 @@ export const StaggerChildren = ({
 
 // Animated card hover effect
 export const HoverCard = ({ children, className = "" }) => (
-  <div className={`group transition-all duration-300 hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1 ${className}`}>
+  <div
+    className={`group transition-all duration-300 hover:shadow-lg ${className}`}
+  >
     {children}
   </div>
 );

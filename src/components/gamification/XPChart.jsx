@@ -20,7 +20,7 @@ export default function XPChart({ userId }) {
   const fetchXPData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/gamification/xp-history?userId=${userId}`);
+      const res = await fetch("/api/gamification/xp-history");
       if (res.ok) {
         const result = await res.json();
         setData(result.data || []);

@@ -29,7 +29,7 @@ export default function GamificationDashboard({ userId }) {
 
   const fetchGamificationStats = async () => {
     try {
-      const res = await fetch(`/api/gamification/stats?userId=${userId}`);
+      const res = await fetch("/api/gamification/stats");
       const data = await res.json();
 
       console.log("GamificationDashboard - Fetched data:", data);

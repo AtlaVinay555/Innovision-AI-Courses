@@ -33,7 +33,7 @@ export default function DailyQuests({ userId }) {
 
   const fetchQuests = async () => {
     try {
-      const res = await fetch(`/api/gamification/daily-quests?userId=${userId}`);
+      const res = await fetch("/api/gamification/daily-quests");
       const data = await res.json();
 
       if (data.quests) {
@@ -54,7 +54,6 @@ export default function DailyQuests({ userId }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId,
           action: "claim",
           questId,
         }),

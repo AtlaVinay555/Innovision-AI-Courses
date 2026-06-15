@@ -25,6 +25,8 @@ Difficulty Level: ${difficulty}
 
 Create a quiz that tests understanding of the key concepts. Include different types of questions.
 
+IMPORTANT: For fill-in-the-blank questions, always include acceptableAnswers array with multiple valid formats.
+
 Return as JSON:
 {
   "title": "Chapter ${chapterNumber} Quiz: ${chapterTitle}",
@@ -57,6 +59,11 @@ Return as JSON:
       "type": "fill-blank",
       "question": "Complete the sentence: The ___ is used for ___.",
       "correctAnswer": "expected answer",
+      "acceptableAnswers": [
+        "expected answer",
+        "alternative format 1",
+        "alternative format 2"
+      ],
       "hints": ["Hint 1", "Hint 2"],
       "explanation": "Explanation",
       "difficulty": "medium",
@@ -70,6 +77,19 @@ Return as JSON:
     "fill-blank": 15
   }
 }
+
+INSTRUCTIONS FOR FILL-BLANK QUESTIONS:
+1. Provide the main answer in "correctAnswer" field
+2. In "acceptableAnswers" array, include:
+   - The main answer
+   - Common abbreviations if applicable
+   - Alternative phrasings
+   - Different casings if relevant
+   Example for "megahertz":
+   {
+     "correctAnswer": "megahertz",
+     "acceptableAnswers": ["megahertz", "MHz", "mhz", "mega hertz"]
+   }
 
 Generate 8-10 questions with a mix of types. Ensure questions are educational and test real understanding.`;
 
