@@ -1,13 +1,21 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin";
+import { getServerSession } from "@/lib/auth-server";
 
-// POST - Award a badge to user
+// POST - Award a badge to the authenticated user
 export async function POST(request) {
   try {
-    const { userId, badgeId } = await request.json();
+    const session = await getServerSession();
 
-    if (!userId || !badgeId) {
-      return NextResponse.json({ error: "userId and badgeId required" }, { status: 400 });
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userId = session.user.email;
+    const { badgeId } = await request.json();
+
+    if (!badgeId) {
+      return NextResponse.json({ error: "badgeId required" }, { status: 400 });
     }
 
     const userRef = adminDb.collection("gamification").doc(userId);

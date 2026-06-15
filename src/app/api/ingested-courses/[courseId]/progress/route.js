@@ -234,9 +234,11 @@ export async function PUT(request, { params }) {
             try {
                 const xpResponse = await fetch(`${request.nextUrl.origin}/api/gamification/stats`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: {
+                        "Content-Type": "application/json",
+                        cookie: request.headers.get("cookie") || "",
+                    },
                     body: JSON.stringify({
-                        userId,
                         action: "complete_chapter",
                         metadata: {
                             courseId,

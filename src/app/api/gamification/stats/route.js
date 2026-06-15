@@ -1,15 +1,17 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { createNotification } from "@/lib/create-notification";
+import { getServerSession } from "@/lib/auth-server";
 
 export async function GET(request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
+    const session = await getServerSession();
 
-    if (!userId) {
-      return NextResponse.json({ error: "User ID required" }, { status: 400 });
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    const userId = session.user.email;
 
     const adminDb = getAdminDb();
 
@@ -81,7 +83,14 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const { userId, action, value } = await request.json();
+    const session = await getServerSession();
+
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userId = session.user.email;
+    const { action, value } = await request.json();
 
     const adminDb = getAdminDb();
 
