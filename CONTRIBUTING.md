@@ -89,8 +89,8 @@ We welcome feature suggestions! Please create an issue with:
 
 2. **Clone your fork**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/Innovision-Open-Source.git
-   cd Innovision-Open-Source
+   git clone https://github.com/YOUR_USERNAME/Innovision-AI-Courses.git
+   cd Innovision-AI-Courses
    ```
 
 3. **Create a new branch**
